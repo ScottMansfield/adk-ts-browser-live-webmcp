@@ -161,11 +161,10 @@ export class AgentUI {
                 id="select-model"
                 class="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs font-mono text-slate-100 focus:outline-none focus:border-cyan-500"
               >
-                <option value="gemini-2.0-flash-exp" selected>gemini-2.0-flash-exp (Fast & Stable)</option>
-                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                <option value="gemini-3.8-flash-live" selected>gemini-3.8-flash-live (Default)</option>
                 <option value="gemini-3.8-live">gemini-3.8-live</option>
-                <option value="gemini-2.5-flash-native-audio-preview">gemini-2.5-flash-native-audio-preview</option>
-                <option value="gemini-3.1-flash-live-preview">gemini-3.1-flash-live-preview</option>
+                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp</option>
               </select>
             </div>
             <div class="col-span-3 flex items-end justify-end h-full pt-4">
@@ -201,14 +200,6 @@ export class AgentUI {
                 <div id="mic-volume-meter" class="h-full bg-cyan-400 transition-all duration-75 w-0"></div>
               </div>
             </div>
-
-            <button
-              id="btn-done-speaking"
-              class="hidden px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition-all cursor-pointer"
-              title="Click when done speaking to immediately trigger model response"
-            >
-              Done Speaking ✓
-            </button>
           </div>
 
           <div class="text-right flex items-center space-x-2">
@@ -446,7 +437,7 @@ export class AgentUI {
         }
 
         const modelSelect = this.container.querySelector('#select-model') as HTMLSelectElement;
-        const model = modelSelect?.value || 'gemini-2.0-flash-exp';
+        const model = modelSelect?.value || 'gemini-3.8-flash-live';
         try {
           await this.agentManager.connect(key, model);
         } catch (err: any) {
@@ -455,22 +446,19 @@ export class AgentUI {
       }
     });
 
-    // Mic Toggle Button & Done Speaking Button
+    // Mic Toggle Button
     const micBtn = this.container.querySelector('#btn-mic') as HTMLButtonElement;
     const micLabel = this.container.querySelector('#mic-status-label');
-    const doneSpeakingBtn = this.container.querySelector('#btn-done-speaking') as HTMLButtonElement;
 
     const setMicUiState = (isActive: boolean) => {
       if (isActive) {
         micBtn.classList.add('bg-cyan-500', 'text-slate-950', 'mic-recording');
         micBtn.classList.remove('bg-slate-800', 'text-slate-300');
-        if (micLabel) micLabel.textContent = 'Listening...';
-        if (doneSpeakingBtn) doneSpeakingBtn.classList.remove('hidden');
+        if (micLabel) micLabel.textContent = 'Listening (Auto-VAD)...';
       } else {
         micBtn.classList.remove('bg-cyan-500', 'text-slate-950', 'mic-recording');
         micBtn.classList.add('bg-slate-800', 'text-slate-300');
         if (micLabel) micLabel.textContent = 'Mic Muted';
-        if (doneSpeakingBtn) doneSpeakingBtn.classList.add('hidden');
       }
     };
 
@@ -478,12 +466,6 @@ export class AgentUI {
       if (!this.agentManager.isLive()) return;
       const isNowActive = await this.agentManager.toggleMicrophone();
       setMicUiState(isNowActive);
-    });
-
-    doneSpeakingBtn?.addEventListener('click', () => {
-      if (!this.agentManager.isLive()) return;
-      this.agentManager.stopMicrophone();
-      setMicUiState(false);
     });
 
     // Suggestion Chips

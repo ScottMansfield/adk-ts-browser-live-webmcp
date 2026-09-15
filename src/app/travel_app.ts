@@ -89,7 +89,7 @@ export class TravelApp {
         const destLower = (args.destination || '').trim().toLowerCase();
         const origLower = (args.origin || 'SFO').trim().toLowerCase();
 
-        const matches = FLIGHT_DATABASE.filter((flight) => {
+        let matches = FLIGHT_DATABASE.filter((flight) => {
           const matchDest =
             flight.destination.toLowerCase() === destLower ||
             flight.destinationCity.toLowerCase().includes(destLower);
@@ -102,6 +102,18 @@ export class TravelApp {
           if (args.cabinClass && flight.cabinClass !== args.cabinClass) return false;
           return true;
         });
+
+        // If no match from default origin, search all origins for this destination
+        if (matches.length === 0 && !args.origin) {
+          matches = FLIGHT_DATABASE.filter((flight) => {
+            const matchDest =
+              flight.destination.toLowerCase() === destLower ||
+              flight.destinationCity.toLowerCase().includes(destLower);
+            if (!matchDest) return false;
+            if (args.cabinClass && flight.cabinClass !== args.cabinClass) return false;
+            return true;
+          });
+        }
 
         this.state.searchQuery = {
           origin: args.origin || 'SFO',

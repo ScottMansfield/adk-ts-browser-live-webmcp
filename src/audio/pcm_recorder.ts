@@ -16,6 +16,7 @@ export class PCMRecorder {
   private mediaStream: MediaStream | null = null;
   private audioCtx: AudioContext | null = null;
   private workletNode: AudioWorkletNode | null = null;
+  private silentGain: GainNode | null = null;
   private legacyProcessor: ScriptProcessorNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   private isRecording: boolean = false;
@@ -86,8 +87,17 @@ export class PCMRecorder {
           handleAudioSamples(event.data);
         };
 
+        // Web Audio uses a pull-based model: the worklet MUST connect to destination
+        // (via a 0-gain node so no speaker feedback occurs) in order for process() to execute.
+        this.silentGain = this.audioCtx.createGain();
+        this.silentGain.gain.value = 0;
+
         this.source.connect(this.workletNode);
+        this.workletNode.connect(this.silentGain);
+        this.silentGain.connect(this.audioCtx.destination);
+
         this.isRecording = true;
+        console.log('[PCMRecorder] AudioWorklet active, stream running at:', currentSampleRate, 'Hz');
         return;
       } catch (err) {
         console.warn('AudioWorklet initialization fallback:', err);
@@ -132,6 +142,11 @@ export class PCMRecorder {
       this.workletNode.disconnect();
       this.workletNode.port.onmessage = null;
       this.workletNode = null;
+    }
+
+    if (this.silentGain) {
+      this.silentGain.disconnect();
+      this.silentGain = null;
     }
 
     if (this.legacyProcessor) {

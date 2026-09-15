@@ -70,7 +70,7 @@ export class LiveAgentManager {
     return this.webmcpToolset;
   }
 
-  async connect(apiKey: string, modelName: string = 'gemini-2.0-flash-exp') {
+  async connect(apiKey: string, modelName: string = 'gemini-3.8-flash-live') {
     if (this.isConnected) {
       await this.disconnect();
     }
@@ -96,7 +96,8 @@ export class LiveAgentManager {
         instruction: `You are the proactive voice concierge for SkyBreeze Airways.
 You assist travelers directly inside their browser via the Web Model Context Protocol (WebMCP).
 You have access to native browser tools registered on the page:
-1. 'search_flights': Search for flights matching the user's destination, origin, and cabin class.
+1. 'search_flights': Search for flights matching destination, origin, and cabin class.
+   - If the user names a destination without an origin, assume origin is 'SFO' (San Francisco) and search immediately.
 2. 'select_flight': Select a flight card on the page using its flightId (e.g. SB-101, SB-102).
 3. 'customize_amenities': Change seating preference (Window, Aisle, Extra Legroom Exit Row), in-flight meal, and checked luggage count.
 4. 'confirm_booking': Finalize the reservation when the traveler provides their name and email.
@@ -104,8 +105,8 @@ You have access to native browser tools registered on the page:
 
 Behavior guidelines:
 - Actuate the webpage immediately by calling the tools when the user gives instructions.
-- Be friendly, concise, natural, and helpful.
-- When you execute a tool, acknowledge the action cleanly (e.g. "I've updated the flights for Tokyo.").`,
+- Never ask redundant questions if the destination or flight is clear. Default origin to SFO.
+- When you execute a tool, describe what changed cleanly, concisely, and naturally.`,
         tools: [this.webmcpToolset],
       });
 
@@ -308,25 +309,6 @@ Behavior guidelines:
     });
   }
 
-  /**
-   * Explicitly signals completion of the user's conversational turn.
-   * Prompts Gemini to immediately process buffered input and generate a response.
-   */
-  finishUserTurn() {
-    if (this.liveRequestQueue && this.isConnected) {
-      this.liveRequestQueue.sendContent({
-        role: 'user',
-        parts: [{ text: '' }],
-      });
-      this.callbacks.onLog({
-        id: crypto.randomUUID(),
-        timestamp: new Date(),
-        type: 'system',
-        title: 'Turn Completed (Requested Response)',
-      });
-    }
-  }
-
   async startMicrophone() {
     if (!this.liveRequestQueue || !this.isConnected) {
       throw new Error('Live agent is not connected.');
@@ -353,7 +335,7 @@ Behavior guidelines:
       id: crypto.randomUUID(),
       timestamp: new Date(),
       type: 'system',
-      title: 'Microphone Active (Streaming 16kHz PCM, 32ms chunks)',
+      title: 'Microphone Active (Streaming 16kHz PCM, automatic silence VAD active)',
     });
   }
 
@@ -361,14 +343,11 @@ Behavior guidelines:
     this.pcmRecorder.stop();
     this.callbacks.onVolumeChange(0);
 
-    // Force turn completion on mic stop so Gemini immediately answers whatever was spoken
-    this.finishUserTurn();
-
     this.callbacks.onLog({
       id: crypto.randomUUID(),
       timestamp: new Date(),
       type: 'system',
-      title: 'Microphone Muted (Turn Completed)',
+      title: 'Microphone Muted',
     });
   }
 
