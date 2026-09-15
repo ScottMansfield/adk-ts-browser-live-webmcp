@@ -45,9 +45,10 @@ export function isWebMCPSupported(doc: Document = globalThis.document): boolean 
 export class WebMCPToolset extends BaseToolset {
   private readonly doc: Document;
   private readonly fromOrigins?: string[];
+  private changeListeners: Array<() => void> = [];
 
   constructor(options: WebMCPToolsetOptions = {}) {
-    super(options.toolFilter, options.prefix);
+    super(options.toolFilter ?? [], options.prefix);
     this.doc = options.document ?? (typeof document !== 'undefined' ? document : (undefined as unknown as Document));
     this.fromOrigins = options.fromOrigins;
   }
@@ -63,7 +64,7 @@ export class WebMCPToolset extends BaseToolset {
    * Retrieves all tools exposed via document.modelContext, converting them
    * to ADK WebMCPTool instances.
    */
-  async getTools(context?: ReadonlyContext): Promise<BaseTool[]> {
+  override async getTools(context?: ReadonlyContext): Promise<BaseTool[]> {
     if (!this.isSupported()) {
       console.warn(
         'WebMCPToolset: document.modelContext is not supported in this browser. Ensure chrome://flags/#enable-webmcp-testing is enabled.'
@@ -79,10 +80,18 @@ export class WebMCPToolset extends BaseToolset {
     for (const rawTool of registeredTools) {
       const toolName = this.prefix ? `${this.prefix}_${rawTool.name}` : rawTool.name;
       const tool = new WebMCPTool(rawTool, toolName, this.doc);
+      tools.push(tool);
+    }
 
-      if (this.isToolSelected(tool, context)) {
-        tools.push(tool);
-      }
+    const filter = this.toolFilter;
+    if (!filter || (Array.isArray(filter) && filter.length === 0)) {
+      return tools;
+    }
+    if (Array.isArray(filter)) {
+      return tools.filter((tool) => filter.includes(tool.name));
+    }
+    if (context) {
+      return tools.filter((tool) => (filter as ToolPredicate)(tool, context));
     }
 
     return tools;
@@ -99,10 +108,25 @@ export class WebMCPToolset extends BaseToolset {
 
     const modelContext = this.doc.modelContext!;
     const handler = () => onChange();
+    this.changeListeners.push(handler);
 
     modelContext.addEventListener('toolchange', handler);
     return () => {
       modelContext.removeEventListener('toolchange', handler);
+      this.changeListeners = this.changeListeners.filter((l) => l !== handler);
     };
+  }
+
+  /**
+   * Closes the toolset and cleans up active subscriptions.
+   */
+  override async close(): Promise<void> {
+    if (this.isSupported() && this.changeListeners.length > 0) {
+      const modelContext = this.doc.modelContext!;
+      for (const listener of this.changeListeners) {
+        modelContext.removeEventListener('toolchange', listener);
+      }
+      this.changeListeners = [];
+    }
   }
 }
