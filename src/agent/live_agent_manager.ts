@@ -14,6 +14,7 @@ import {
   getFunctionResponses,
   type Event as ADKEvent,
 } from '@google/adk';
+import { Modality } from '@google/genai';
 import { WebMCPToolset } from '../adk-webmcp/index.ts';
 import { PCMPlayer } from '../audio/pcm_player.ts';
 import { PCMRecorder } from '../audio/pcm_recorder.ts';
@@ -31,6 +32,7 @@ export interface LiveAgentCallbacks {
   onLog: (entry: AgentLogEntry) => void;
   onTranscript: (speaker: 'user' | 'model', text: string, isPartial?: boolean) => void;
   onVolumeChange: (volumePercent: number) => void;
+  onPlaybackStateChange?: (isPlaying: boolean) => void;
 }
 
 export class LiveAgentManager {
@@ -50,6 +52,9 @@ export class LiveAgentManager {
     this.callbacks = callbacks;
     this.webmcpToolset = new WebMCPToolset();
     this.pcmPlayer = new PCMPlayer(24000);
+    this.pcmPlayer.setPlaybackStateCallback((isPlaying) => {
+      this.callbacks.onPlaybackStateChange?.(isPlaying);
+    });
     this.pcmRecorder = new PCMRecorder();
   }
 
@@ -65,9 +70,16 @@ export class LiveAgentManager {
     return this.webmcpToolset;
   }
 
-  async connect(apiKey: string, modelName: string = 'gemini-3.8-flash-live') {
+  async connect(apiKey: string, modelName: string = 'gemini-2.0-flash-exp') {
     if (this.isConnected) {
       await this.disconnect();
+    }
+
+    // Unlock Web Audio playback within user gesture context
+    try {
+      await this.pcmPlayer.resume();
+    } catch (e) {
+      console.warn('AudioContext pre-warming warning:', e);
     }
 
     this.callbacks.onStatusChange('connecting', `Opening Live connection to ${modelName}...`);
@@ -91,9 +103,9 @@ You have access to native browser tools registered on the page:
 5. 'get_current_itinerary': Inspect the current state of the travel itinerary.
 
 Behavior guidelines:
-- Actuate the webpage immediately when the user gives instructions.
+- Actuate the webpage immediately by calling the tools when the user gives instructions.
 - Be friendly, concise, natural, and helpful.
-- When you execute a tool, acknowledge the action cleanly (e.g., "I've pulled up flights to Tokyo. Flight SB 101 on the Dreamliner leaves at 11:15 AM.").`,
+- When you execute a tool, acknowledge the action cleanly (e.g. "I've updated the flights for Tokyo.").`,
         tools: [this.webmcpToolset],
       });
 
@@ -105,19 +117,17 @@ Behavior guidelines:
 
       this.liveRequestQueue = new LiveRequestQueue();
       this.abortController = new AbortController();
-      this.isConnected = true;
 
-      this.callbacks.onStatusChange('connected', `Live session active (${modelName})`);
       this.callbacks.onLog({
         id: crypto.randomUUID(),
         timestamp: new Date(),
         type: 'system',
-        title: 'Live Agent Connected',
+        title: 'Initializing Gemini Live WebSocket',
         details: { model: modelName },
       });
 
-      // Start the ADK live event processing loop in background
-      this.startLiveLoop();
+      // Start the ADK live event processing loop
+      this.startLiveLoop(modelName);
     } catch (err: any) {
       this.isConnected = false;
       this.callbacks.onStatusChange('error', err?.message || String(err));
@@ -132,7 +142,7 @@ Behavior guidelines:
     }
   }
 
-  private async startLiveLoop() {
+  private async startLiveLoop(modelName: string) {
     if (!this.runner || !this.liveRequestQueue || !this.abortController) return;
 
     try {
@@ -141,9 +151,36 @@ Behavior guidelines:
         userId: 'demo-user',
         liveRequestQueue: this.liveRequestQueue,
         abortSignal: this.abortController.signal,
+        runConfig: {
+          responseModalities: [Modality.AUDIO],
+          outputAudioTranscription: {},
+          inputAudioTranscription: {},
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: 'Aoede',
+              },
+            },
+          },
+        },
       });
 
+      let connectionEstablished = false;
+
       for await (const event of liveEvents) {
+        if (!connectionEstablished) {
+          connectionEstablished = true;
+          this.isConnected = true;
+          this.callbacks.onStatusChange('connected', `Live session active (${modelName})`);
+          this.callbacks.onLog({
+            id: crypto.randomUUID(),
+            timestamp: new Date(),
+            type: 'system',
+            title: 'Live WebSocket Handshake Established',
+            details: { model: modelName, audioSampleRate: 24000 },
+          });
+        }
+
         this.processLiveEvent(event);
       }
     } catch (err: any) {
@@ -151,15 +188,18 @@ Behavior guidelines:
         return;
       }
       console.error('Error in live runner loop:', err);
+      const errMsg = err?.message || String(err);
+      this.isConnected = false;
+      this.callbacks.onStatusChange('error', errMsg);
       this.callbacks.onLog({
         id: crypto.randomUUID(),
         timestamp: new Date(),
         type: 'error',
-        title: 'Live Session Interrupted',
-        details: err?.message || String(err),
+        title: 'Live Session Error',
+        details: errMsg,
       });
-      this.callbacks.onStatusChange('error', err?.message || String(err));
-      this.disconnect();
+      this.pcmRecorder.stop();
+      this.pcmPlayer.stop();
     }
   }
 
@@ -185,11 +225,23 @@ Behavior guidelines:
       this.callbacks.onTranscript('model', text, (event as any).partial);
     }
 
-    // 3. Audio output
+    // 3. Audio & Text content
     if (event.content?.parts) {
       for (const part of event.content.parts) {
-        if (part.inlineData?.mimeType?.startsWith('audio/') && part.inlineData.data) {
-          this.pcmPlayer.playChunk(part.inlineData.data);
+        // Audio output (24kHz PCM)
+        if (part.inlineData?.data) {
+          const mimeType = part.inlineData.mimeType || 'audio/pcm;rate=24000';
+          let sampleRate = 24000;
+          const match = mimeType.match(/rate=(\d+)/);
+          if (match) {
+            sampleRate = parseInt(match[1], 10);
+          }
+          this.pcmPlayer.playChunk(part.inlineData.data, sampleRate);
+        }
+
+        // Text part if transcription was not sent separately
+        if (part.text && !part.thought && !(event as any).outputTranscription) {
+          this.callbacks.onTranscript('model', part.text, (event as any).partial);
         }
       }
     }
@@ -228,6 +280,11 @@ Behavior guidelines:
       throw new Error('Live agent is not connected.');
     }
 
+    // Unlock audio context on user interaction
+    try {
+      await this.pcmPlayer.resume();
+    } catch (_e) {}
+
     this.callbacks.onTranscript('user', text, false);
     this.callbacks.onLog({
       id: crypto.randomUUID(),
@@ -248,6 +305,9 @@ Behavior guidelines:
       throw new Error('Live agent is not connected.');
     }
 
+    // Unlock audio playback within user gesture
+    await this.pcmPlayer.resume();
+
     this.liveRequestQueue.sendActivityStart();
     await this.pcmRecorder.start({
       onAudioChunk: (base64Chunk) => {
@@ -267,7 +327,7 @@ Behavior guidelines:
       id: crypto.randomUUID(),
       timestamp: new Date(),
       type: 'system',
-      title: 'Microphone Streaming Started (16kHz PCM)',
+      title: 'Microphone AudioWorklet Streaming (16kHz PCM)',
     });
   }
 

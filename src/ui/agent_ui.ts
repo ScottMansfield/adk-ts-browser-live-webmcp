@@ -49,14 +49,15 @@ export class AgentUI {
   }
 
   updateTranscript(speaker: 'user' | 'model', text: string, isPartial: boolean = false) {
-    if (this.transcripts.length === 0 || this.transcripts[this.transcripts.length - 1].speaker !== speaker || !isPartial) {
-      if (!isPartial || this.transcripts.length === 0 || this.transcripts[this.transcripts.length - 1].speaker !== speaker) {
-        this.transcripts.push({ speaker, text });
-      } else {
-        this.transcripts[this.transcripts.length - 1].text = text;
-      }
+    const last = this.transcripts[this.transcripts.length - 1];
+    if (!last || last.speaker !== speaker) {
+      this.transcripts.push({ speaker, text });
     } else {
-      this.transcripts[this.transcripts.length - 1].text = text;
+      if (isPartial) {
+        last.text += text;
+      } else {
+        last.text = text;
+      }
     }
     this.updateChatTab();
   }
@@ -65,6 +66,17 @@ export class AgentUI {
     const meterEl = this.container.querySelector('#mic-volume-meter') as HTMLElement;
     if (meterEl) {
       meterEl.style.width = `${Math.min(100, Math.max(0, volumePercent))}%`;
+    }
+  }
+
+  updatePlaybackState(isPlaying: boolean) {
+    const speakerIndicator = this.container.querySelector('#agent-speaker-indicator');
+    if (speakerIndicator) {
+      if (isPlaying) {
+        speakerIndicator.classList.remove('hidden');
+      } else {
+        speakerIndicator.classList.add('hidden');
+      }
     }
   }
 
@@ -149,9 +161,11 @@ export class AgentUI {
                 id="select-model"
                 class="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs font-mono text-slate-100 focus:outline-none focus:border-cyan-500"
               >
-                <option value="gemini-3.8-flash-live" selected>gemini-3.8-flash-live (Latest)</option>
+                <option value="gemini-2.0-flash-exp" selected>gemini-2.0-flash-exp (Fast & Stable)</option>
+                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                <option value="gemini-3.8-live">gemini-3.8-live</option>
                 <option value="gemini-2.5-flash-native-audio-preview">gemini-2.5-flash-native-audio-preview</option>
-                <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp</option>
+                <option value="gemini-3.1-flash-live-preview">gemini-3.1-flash-live-preview</option>
               </select>
             </div>
             <div class="col-span-3 flex items-end justify-end h-full pt-4">
@@ -189,9 +203,14 @@ export class AgentUI {
             </div>
           </div>
 
-          <div class="text-right">
-            <div class="text-[11px] font-medium text-slate-400">WebMCP Bridge</div>
-            <div class="text-xs font-mono text-cyan-400">${this.registeredTools.length} tools registered</div>
+          <div class="text-right flex items-center space-x-2">
+            <span id="agent-speaker-indicator" class="hidden text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse flex items-center gap-1 font-semibold">
+              🔊 Speaking
+            </span>
+            <div>
+              <div class="text-[11px] font-medium text-slate-400">WebMCP Bridge</div>
+              <div class="text-xs font-mono text-cyan-400">${this.registeredTools.length} tools registered</div>
+            </div>
           </div>
         </div>
 
@@ -419,7 +438,7 @@ export class AgentUI {
         }
 
         const modelSelect = this.container.querySelector('#select-model') as HTMLSelectElement;
-        const model = modelSelect?.value || 'gemini-3.8-flash-live';
+        const model = modelSelect?.value || 'gemini-2.0-flash-exp';
         try {
           await this.agentManager.connect(key, model);
         } catch (err: any) {

@@ -51,6 +51,9 @@ async function bootstrap() {
     onVolumeChange: (volume) => {
       agentUI?.updateVolume(volume);
     },
+    onPlaybackStateChange: (isPlaying) => {
+      agentUI?.updatePlaybackState(isPlaying);
+    },
   });
 
   agentUI = new AgentUI(agentContainer, agentManager);
