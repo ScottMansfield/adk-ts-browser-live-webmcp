@@ -14,7 +14,7 @@ import {
   getFunctionResponses,
   type Event as ADKEvent,
 } from '@google/adk';
-import { Modality } from '@google/genai';
+import { Modality, StartSensitivity, EndSensitivity } from '@google/genai';
 import { WebMCPToolset } from '../adk-webmcp/index.ts';
 import { PCMPlayer } from '../audio/pcm_player.ts';
 import { PCMRecorder } from '../audio/pcm_recorder.ts';
@@ -162,6 +162,14 @@ Behavior guidelines:
               },
             },
           },
+          realtimeInputConfig: {
+            automaticActivityDetection: {
+              startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_HIGH,
+              endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_HIGH,
+              silenceDurationMs: 400,
+              prefixPaddingMs: 20,
+            },
+          },
         },
       });
 
@@ -300,6 +308,25 @@ Behavior guidelines:
     });
   }
 
+  /**
+   * Explicitly signals completion of the user's conversational turn.
+   * Prompts Gemini to immediately process buffered input and generate a response.
+   */
+  finishUserTurn() {
+    if (this.liveRequestQueue && this.isConnected) {
+      this.liveRequestQueue.sendContent({
+        role: 'user',
+        parts: [{ text: '' }],
+      });
+      this.callbacks.onLog({
+        id: crypto.randomUUID(),
+        timestamp: new Date(),
+        type: 'system',
+        title: 'Turn Completed (Requested Response)',
+      });
+    }
+  }
+
   async startMicrophone() {
     if (!this.liveRequestQueue || !this.isConnected) {
       throw new Error('Live agent is not connected.');
@@ -308,7 +335,6 @@ Behavior guidelines:
     // Unlock audio playback within user gesture
     await this.pcmPlayer.resume();
 
-    this.liveRequestQueue.sendActivityStart();
     await this.pcmRecorder.start({
       onAudioChunk: (base64Chunk) => {
         if (this.liveRequestQueue && this.isConnected) {
@@ -327,21 +353,22 @@ Behavior guidelines:
       id: crypto.randomUUID(),
       timestamp: new Date(),
       type: 'system',
-      title: 'Microphone AudioWorklet Streaming (16kHz PCM)',
+      title: 'Microphone Active (Streaming 16kHz PCM, 32ms chunks)',
     });
   }
 
   stopMicrophone() {
     this.pcmRecorder.stop();
     this.callbacks.onVolumeChange(0);
-    if (this.liveRequestQueue && this.isConnected) {
-      this.liveRequestQueue.sendActivityEnd();
-    }
+
+    // Force turn completion on mic stop so Gemini immediately answers whatever was spoken
+    this.finishUserTurn();
+
     this.callbacks.onLog({
       id: crypto.randomUUID(),
       timestamp: new Date(),
       type: 'system',
-      title: 'Microphone Streaming Stopped',
+      title: 'Microphone Muted (Turn Completed)',
     });
   }
 

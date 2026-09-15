@@ -34,28 +34,40 @@ export class PCMRecorder {
       },
     });
 
-    this.audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    // Request 16000Hz AudioContext so the browser natively captures at 16kHz
+    try {
+      this.audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({
+        sampleRate: this.targetSampleRate,
+      });
+    } catch (_e) {
+      this.audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+
     if (this.audioCtx.state === 'suspended') {
       await this.audioCtx.resume();
     }
 
-    const sourceSampleRate = this.audioCtx.sampleRate;
+    const currentSampleRate = this.audioCtx.sampleRate;
     this.source = this.audioCtx.createMediaStreamSource(this.mediaStream);
 
     const handleAudioSamples = (inputData: Float32Array) => {
       if (!this.isRecording) return;
 
-      // Calculate RMS for volume visualization
+      // Calculate RMS for visual volume meter
       let sumSquares = 0;
       for (let i = 0; i < inputData.length; i++) {
         sumSquares += inputData[i] * inputData[i];
       }
       const rms = Math.sqrt(sumSquares / inputData.length);
-      const volume = Math.min(100, Math.round(rms * 400));
+      const volume = Math.min(100, Math.round(rms * 500));
       callbacks.onVolumeChange?.(volume);
 
-      // Downsample to 16kHz linear PCM if needed
-      const resampledData = this.resampleAudio(inputData, sourceSampleRate, this.targetSampleRate);
+      // Downsample only if the audio context is not already at 16kHz
+      const resampledData =
+        currentSampleRate === this.targetSampleRate
+          ? inputData
+          : this.resampleAudio(inputData, currentSampleRate, this.targetSampleRate);
+
       const pcm16 = float32ToInt16PCM(resampledData);
       const base64Chunk = arrayBufferToBase64(pcm16.buffer);
 
@@ -78,7 +90,7 @@ export class PCMRecorder {
         this.isRecording = true;
         return;
       } catch (err) {
-        console.warn('AudioWorklet initialization failed, using fallback:', err);
+        console.warn('AudioWorklet initialization fallback:', err);
       }
     }
 

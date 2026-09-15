@@ -201,6 +201,14 @@ export class AgentUI {
                 <div id="mic-volume-meter" class="h-full bg-cyan-400 transition-all duration-75 w-0"></div>
               </div>
             </div>
+
+            <button
+              id="btn-done-speaking"
+              class="hidden px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition-all cursor-pointer"
+              title="Click when done speaking to immediately trigger model response"
+            >
+              Done Speaking ✓
+            </button>
           </div>
 
           <div class="text-right flex items-center space-x-2">
@@ -447,22 +455,35 @@ export class AgentUI {
       }
     });
 
-    // Mic Toggle Button
+    // Mic Toggle Button & Done Speaking Button
     const micBtn = this.container.querySelector('#btn-mic') as HTMLButtonElement;
     const micLabel = this.container.querySelector('#mic-status-label');
-    micBtn?.addEventListener('click', async () => {
-      if (!this.agentManager.isLive()) return;
+    const doneSpeakingBtn = this.container.querySelector('#btn-done-speaking') as HTMLButtonElement;
 
-      const isNowActive = await this.agentManager.toggleMicrophone();
-      if (isNowActive) {
+    const setMicUiState = (isActive: boolean) => {
+      if (isActive) {
         micBtn.classList.add('bg-cyan-500', 'text-slate-950', 'mic-recording');
         micBtn.classList.remove('bg-slate-800', 'text-slate-300');
         if (micLabel) micLabel.textContent = 'Listening...';
+        if (doneSpeakingBtn) doneSpeakingBtn.classList.remove('hidden');
       } else {
         micBtn.classList.remove('bg-cyan-500', 'text-slate-950', 'mic-recording');
         micBtn.classList.add('bg-slate-800', 'text-slate-300');
         if (micLabel) micLabel.textContent = 'Mic Muted';
+        if (doneSpeakingBtn) doneSpeakingBtn.classList.add('hidden');
       }
+    };
+
+    micBtn?.addEventListener('click', async () => {
+      if (!this.agentManager.isLive()) return;
+      const isNowActive = await this.agentManager.toggleMicrophone();
+      setMicUiState(isNowActive);
+    });
+
+    doneSpeakingBtn?.addEventListener('click', () => {
+      if (!this.agentManager.isLive()) return;
+      this.agentManager.stopMicrophone();
+      setMicUiState(false);
     });
 
     // Suggestion Chips

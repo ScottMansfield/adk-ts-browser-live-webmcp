@@ -6,11 +6,26 @@
 
 export const PCM_WORKLET_PROCESSOR_CODE = `
 class PCMRecorderProcessor extends AudioWorkletProcessor {
-  process(inputs, outputs, parameters) {
+  constructor() {
+    super();
+    // Buffer 512 samples (~32ms at 16kHz) for optimal Live API VAD chunking
+    this.bufferSize = 512;
+    this.buffer = new Float32Array(this.bufferSize);
+    this.bufferIndex = 0;
+  }
+
+  process(inputs) {
     const input = inputs[0];
     if (input && input.length > 0) {
-      // Send the first channel's Float32Array data to the main thread
-      this.port.postMessage(input[0]);
+      const channel = input[0];
+      for (let i = 0; i < channel.length; i++) {
+        this.buffer[this.bufferIndex++] = channel[i];
+        if (this.bufferIndex >= this.bufferSize) {
+          // Post exactly 512 samples
+          this.port.postMessage(this.buffer.slice(0, this.bufferSize));
+          this.bufferIndex = 0;
+        }
+      }
     }
     return true;
   }
