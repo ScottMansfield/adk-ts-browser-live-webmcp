@@ -14,10 +14,31 @@ import {
   getFunctionResponses,
   type Event as ADKEvent,
 } from '@google/adk';
-import { Modality, StartSensitivity, EndSensitivity } from '@google/genai';
+import { Modality } from '@google/genai';
 import { WebMCPToolset } from '../adk-webmcp/index.ts';
 import { PCMPlayer } from '../audio/pcm_player.ts';
 import { PCMRecorder } from '../audio/pcm_recorder.ts';
+
+// Patch ADK's Gemini.connect so audio blobs are routed as { audio: blob } for Gemini 3.8/3.x models
+const originalGeminiConnect = (Gemini.prototype as any).connect;
+if (originalGeminiConnect && !(Gemini.prototype as any).__patchedForLiveAudio) {
+  (Gemini.prototype as any).__patchedForLiveAudio = true;
+  (Gemini.prototype as any).connect = async function (llmRequest: any) {
+    const connection = await originalGeminiConnect.call(this, llmRequest);
+    const originalSendRealtime = connection.sendRealtime;
+
+    connection.sendRealtime = async function (blob: any) {
+      if (blob?.mimeType?.startsWith('audio/')) {
+        // Direct audio payload required by Gemini 3.x Live API endpoints
+        this.geminiSession.sendRealtimeInput({ audio: blob });
+      } else {
+        return originalSendRealtime.call(this, blob);
+      }
+    };
+
+    return connection;
+  };
+}
 
 export interface AgentLogEntry {
   id: string;
@@ -70,7 +91,7 @@ export class LiveAgentManager {
     return this.webmcpToolset;
   }
 
-  async connect(apiKey: string, modelName: string = 'gemini-3.8-flash-live') {
+  async connect(apiKey: string, modelName: string = 'gemini-3.8-live') {
     if (this.isConnected) {
       await this.disconnect();
     }
@@ -161,14 +182,6 @@ Behavior guidelines:
               prebuiltVoiceConfig: {
                 voiceName: 'Aoede',
               },
-            },
-          },
-          realtimeInputConfig: {
-            automaticActivityDetection: {
-              startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_HIGH,
-              endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_HIGH,
-              silenceDurationMs: 400,
-              prefixPaddingMs: 20,
             },
           },
         },
@@ -335,7 +348,7 @@ Behavior guidelines:
       id: crypto.randomUUID(),
       timestamp: new Date(),
       type: 'system',
-      title: 'Microphone Active (Streaming 16kHz PCM, automatic silence VAD active)',
+      title: 'Microphone Active (Streaming 16kHz PCM, automatic VAD active)',
     });
   }
 

@@ -161,8 +161,7 @@ export class AgentUI {
                 id="select-model"
                 class="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs font-mono text-slate-100 focus:outline-none focus:border-cyan-500"
               >
-                <option value="gemini-3.8-flash-live" selected>gemini-3.8-flash-live (Default)</option>
-                <option value="gemini-3.8-live">gemini-3.8-live</option>
+                <option value="gemini-3.8-live" selected>gemini-3.8-live (Default)</option>
                 <option value="gemini-2.5-flash">gemini-2.5-flash</option>
                 <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp</option>
               </select>
@@ -437,7 +436,7 @@ export class AgentUI {
         }
 
         const modelSelect = this.container.querySelector('#select-model') as HTMLSelectElement;
-        const model = modelSelect?.value || 'gemini-3.8-flash-live';
+        const model = modelSelect?.value || 'gemini-3.8-live';
         try {
           await this.agentManager.connect(key, model);
         } catch (err: any) {
