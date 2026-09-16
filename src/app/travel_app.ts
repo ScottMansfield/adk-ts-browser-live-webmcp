@@ -450,7 +450,7 @@ export class TravelApp {
         <!-- Search Bar -->
         <div class="bg-slate-800/60 rounded-xl p-3.5 border border-slate-700/60 backdrop-blur-sm">
           <div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Search Flight Options</div>
-          <div class="grid grid-cols-3 gap-2">
+          <div class="grid grid-cols-2 gap-2">
             <div>
               <label class="text-[11px] text-slate-400">Origin</label>
               <input type="text" id="input-origin" value="${this.state.searchQuery.origin}" class="w-full mt-1 px-2.5 py-1.5 bg-slate-900/80 border border-slate-700 rounded-lg text-sm font-medium text-slate-100 focus:outline-none focus:border-cyan-500" />
@@ -458,14 +458,6 @@ export class TravelApp {
             <div>
               <label class="text-[11px] text-slate-400">Destination</label>
               <input type="text" id="input-destination" value="${this.state.searchQuery.destination}" class="w-full mt-1 px-2.5 py-1.5 bg-slate-900/80 border border-slate-700 rounded-lg text-sm font-medium text-slate-100 focus:outline-none focus:border-cyan-500" />
-            </div>
-            <div>
-              <label class="text-[11px] text-slate-400">Cabin Class</label>
-              <select id="input-cabin" class="w-full mt-1 px-2.5 py-1.5 bg-slate-900/80 border border-slate-700 rounded-lg text-sm font-medium text-slate-100 focus:outline-none focus:border-cyan-500">
-                <option value="Economy" ${this.state.searchQuery.cabinClass === 'Economy' ? 'selected' : ''}>Economy</option>
-                <option value="Premium Economy" ${this.state.searchQuery.cabinClass === 'Premium Economy' ? 'selected' : ''}>Premium Economy</option>
-                <option value="Business" ${this.state.searchQuery.cabinClass === 'Business' ? 'selected' : ''}>Business</option>
-              </select>
             </div>
           </div>
         </div>

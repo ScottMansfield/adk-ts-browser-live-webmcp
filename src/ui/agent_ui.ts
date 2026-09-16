@@ -84,7 +84,15 @@ export class AgentUI {
   addLog(entry: AgentLogEntry) {
     this.logs.unshift(entry);
     if (this.logs.length > 100) this.logs.pop();
+    // The count sits in the tab label, outside #content-logs, so it needs
+    // updating too or it only catches up on the next full render.
+    this.updateLogCountLabel();
     this.updateLogsTab();
+  }
+
+  private updateLogCountLabel() {
+    const tab = this.container.querySelector('#tab-logs');
+    if (tab) tab.textContent = `Trace Stream (${this.logs.length})`;
   }
 
   /**
@@ -348,6 +356,7 @@ export class AgentUI {
     this.updateChatTab();
     this.updateToolCountLabels();
     this.updateToolsTab();
+    this.updateLogCountLabel();
     this.updateLogsTab();
     // Re-apply live state the fresh markup just clobbered.
     this.updateStatus(this.lastStatus, this.lastStatusMessage);
