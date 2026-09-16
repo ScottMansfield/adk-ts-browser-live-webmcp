@@ -185,6 +185,16 @@ Behavior guidelines:
           });
           return;
         }
+        if (event.type === 'setup') {
+          this.callbacks.onLog({
+            id: crypto.randomUUID(),
+            timestamp: new Date(),
+            type: 'system',
+            title: `Tool declarations sent to model (${event.functionDeclarations?.length ?? 0})`,
+            details: event.functionDeclarations,
+          });
+          return;
+        }
         if (event.type === 'toolcall') {
           this.callbacks.onLog({
             id: crypto.randomUUID(),

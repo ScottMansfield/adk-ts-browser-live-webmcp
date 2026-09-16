@@ -15,12 +15,14 @@
  */
 
 export interface LiveSocketEvent {
-  type: 'open' | 'close' | 'error' | 'toolcall';
+  type: 'open' | 'close' | 'error' | 'toolcall' | 'setup';
   code?: number;
   reason?: string;
   url: string;
   /** Raw functionCalls exactly as the server sent them, for 'toolcall'. */
   functionCalls?: unknown[];
+  /** Tool declarations exactly as sent in the setup frame, for 'setup'. */
+  functionDeclarations?: unknown[];
 }
 
 type Listener = (event: LiveSocketEvent) => void;
@@ -82,6 +84,21 @@ export function installLiveSocketMonitor() {
         emit({ type: 'close', code: e.code, reason: e.reason, url: safeUrl })
       );
       socket.addEventListener('error', () => emit({ type: 'error', url: safeUrl }));
+      // Capture the outbound setup frame so the tool declarations the model
+      // actually receives can be inspected, rather than inferred from source.
+      const nativeSend = socket.send.bind(socket);
+      socket.send = (payload: any) => {
+        readFrame(payload, (frame) => {
+          const tools = frame?.setup?.tools;
+          if (Array.isArray(tools)) {
+            const decls = tools.flatMap((t: any) => t?.functionDeclarations ?? []);
+            if (decls.length > 0) {
+              emit({ type: 'setup', url: safeUrl, functionDeclarations: decls });
+            }
+          }
+        });
+        return nativeSend(payload);
+      };
       // Surface tool calls as the server framed them, so a missing argument can
       // be attributed to the model rather than to the client pipeline.
       socket.addEventListener('message', (e: MessageEvent) => {

@@ -71,6 +71,53 @@ describe('executeTool argument encoding', () => {
   });
 });
 
+describe('inputSchema shapes from the browser', () => {
+  const schema = {
+    type: 'object',
+    properties: { flightId: { type: 'string', description: 'e.g. SB-101' } },
+    required: ['flightId'],
+  };
+
+  it('keeps parameters when the schema arrives as an object', () => {
+    const tool = new WebMCPTool({ ...sampleTool, name: 'select_flight', inputSchema: schema });
+    const params = tool._getDeclaration()?.parameters as any;
+    expect(params.properties.flightId.type).toBe('STRING');
+    expect(params.required).toEqual(['flightId']);
+  });
+
+  it('parses a schema that arrives as a JSON string', () => {
+    // Without this the declaration collapses to TYPE_UNSPECIFIED and the model
+    // has no property names to fill in, so it calls with {}.
+    const tool = new WebMCPTool({
+      ...sampleTool,
+      name: 'select_flight',
+      inputSchema: JSON.stringify(schema) as unknown as object,
+    });
+    const params = tool._getDeclaration()?.parameters as any;
+    expect(params.type).toBe('OBJECT');
+    expect(params.properties.flightId.type).toBe('STRING');
+    expect(params.required).toEqual(['flightId']);
+  });
+
+  it('declares an empty object when there is no schema', () => {
+    const tool = new WebMCPTool({ ...sampleTool, name: 'no_args', inputSchema: undefined });
+    const params = tool._getDeclaration()?.parameters as any;
+    expect(params.type).toBe('OBJECT');
+    expect(params.properties).toEqual({});
+  });
+
+  it('degrades to no parameters on an unparseable schema string', () => {
+    const tool = new WebMCPTool({
+      ...sampleTool,
+      name: 'broken',
+      inputSchema: 'not json' as unknown as object,
+    });
+    const params = tool._getDeclaration()?.parameters as any;
+    expect(params.type).toBe('OBJECT');
+    expect(params.properties).toEqual({});
+  });
+});
+
 describe('WebMCP Toolset & Tool', () => {
   beforeEach(() => resetWebMCPArgEncoding());
 
