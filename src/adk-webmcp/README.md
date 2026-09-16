@@ -17,6 +17,18 @@ It is architected as a standalone module so that it can be cleanly moved/upstrea
 - **`schema_utils.ts`**:
   Handles JSON Schema / OpenAPI to Gemini Schema conversion, preserving type definitions, enums, required properties, and object hierarchies.
 
+### Argument encoding
+
+`executeTool` originally took arguments as a JSON **string**; Chrome moved to a
+plain object and deprecated the string form in Chrome 155. Passing an object to
+an older build makes it parse `"[object Object]"` and return
+`{ error: "Failed to parse input arguments" }` without ever running the tool.
+
+`WebMCPTool` therefore probes once: it tries the object form, and only on that
+specific parse failure retries with `JSON.stringify`, caching whichever the
+browser accepted. A parse failure means the tool did not execute, so the retry
+cannot double-apply a side effect. Unrelated tool errors propagate untouched.
+
 ---
 
 ## Upstreaming into `@google/adk`

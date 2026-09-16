@@ -97,6 +97,7 @@ export class LiveAgentManager {
   private callbacks: LiveAgentCallbacks;
   private unsubscribeSocket: (() => void) | null = null;
   private sawModelEvent = false;
+  private usesOutputTranscription = false;
 
   constructor(callbacks: LiveAgentCallbacks) {
     this.callbacks = callbacks;
@@ -313,6 +314,7 @@ Behavior guidelines:
     }
     if ((event as any).outputTranscription?.text) {
       const text = (event as any).outputTranscription.text;
+      this.usesOutputTranscription = true;
       this.callbacks.onTranscript('model', text, (event as any).partial);
     }
 
@@ -330,8 +332,9 @@ Behavior guidelines:
           this.pcmPlayer.playChunk(part.inlineData.data, sampleRate);
         }
 
-        // Text part if transcription was not sent separately
-        if (part.text && !part.thought && !(event as any).outputTranscription) {
+        // Text parts restate what the transcription stream already delivered,
+        // so once transcription is in play it is the single source of truth.
+        if (part.text && !part.thought && !this.usesOutputTranscription) {
           this.callbacks.onTranscript('model', part.text, (event as any).partial);
         }
       }

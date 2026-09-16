@@ -9,6 +9,33 @@ import type { FunctionDeclaration } from '@google/genai';
 import { toGeminiSchema } from './schema_utils.ts';
 import type { WebMCP } from 'webmcp-types';
 
+/**
+ * How this browser wants `executeTool` arguments.
+ *
+ * Chrome took a JSON *string* originally and switched to a plain object, with
+ * the string form deprecated from Chrome 155. Passing an object to an older
+ * build makes it parse "[object Object]" and fail, so the encoding is probed
+ * once and then reused for the rest of the session.
+ */
+type ArgEncoding = 'object' | 'json-string';
+let negotiatedArgEncoding: ArgEncoding | null = null;
+
+/** Resets the probe; intended for tests. */
+export function resetWebMCPArgEncoding() {
+  negotiatedArgEncoding = null;
+}
+
+/** True when a result/exception means the browser could not read the args. */
+function isArgParseFailure(value: unknown): boolean {
+  const text =
+    typeof value === 'string'
+      ? value
+      : value && typeof value === 'object'
+        ? String((value as any).error ?? (value as any).message ?? '')
+        : '';
+  return /failed to parse input arguments|could not parse .*arguments/i.test(text);
+}
+
 export class WebMCPTool extends BaseTool {
   readonly webmcpTool: WebMCP.RegisteredTool;
   readonly originalName: string;
@@ -60,13 +87,46 @@ export class WebMCPTool extends BaseTool {
     }
 
     const abortSignal = request.toolContext?.abortSignal;
-    const result = await executeToolFn.call(
-      modelContext,
-      this.webmcpTool,
-      request.args ?? {},
-      abortSignal ? { signal: abortSignal } : undefined
-    );
+    const args = request.args ?? {};
+    const options = abortSignal ? { signal: abortSignal } : undefined;
 
-    return result;
+    const invoke = (encoding: ArgEncoding) =>
+      executeToolFn.call(
+        modelContext,
+        this.webmcpTool,
+        encoding === 'json-string' ? JSON.stringify(args) : args,
+        options
+      );
+
+    // Once the encoding is known, use it directly.
+    if (negotiatedArgEncoding) {
+      return await invoke(negotiatedArgEncoding);
+    }
+
+    // Probe: try the modern object form, fall back to the legacy JSON string.
+    // A parse failure means the tool never ran, so retrying cannot double-apply
+    // a side effect.
+    let firstResult: unknown;
+    try {
+      firstResult = await invoke('object');
+      if (!isArgParseFailure(firstResult)) {
+        negotiatedArgEncoding = 'object';
+        return firstResult;
+      }
+    } catch (err) {
+      if (!isArgParseFailure(err)) throw err;
+      firstResult = err;
+    }
+
+    const retried = await invoke('json-string');
+    if (isArgParseFailure(retried)) {
+      // Neither encoding worked; surface the original complaint.
+      return firstResult;
+    }
+    negotiatedArgEncoding = 'json-string';
+    console.info(
+      '[webmcp] this browser expects JSON-string tool arguments; using that encoding'
+    );
+    return retried;
   }
 }

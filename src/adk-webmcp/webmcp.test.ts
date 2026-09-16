@@ -1,9 +1,79 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WebMCPToolset, isWebMCPSupported } from './webmcp_toolset.ts';
-import { WebMCPTool } from './webmcp_tool.ts';
+import { WebMCPTool, resetWebMCPArgEncoding } from './webmcp_tool.ts';
 import type { WebMCP } from 'webmcp-types';
 
+const sampleTool: WebMCP.RegisteredTool = {
+  name: 'search_flights',
+  title: 'Search',
+  description: 'Search flights',
+  origin: 'https://example.com',
+  window: {} as Window,
+};
+
+describe('executeTool argument encoding', () => {
+  beforeEach(() => resetWebMCPArgEncoding());
+
+  it('falls back to a JSON string when the browser cannot parse an object', async () => {
+    // Reproduces pre-Chrome-155 behavior: object args yield
+    // {error: "Failed to parse input arguments"} and never run the tool.
+    const executeTool = vi.fn(async (_tool: any, args: any) =>
+      typeof args === 'string'
+        ? { count: 2, flights: ['SB-101'] }
+        : { error: 'Failed to parse input arguments' }
+    );
+    const doc = { modelContext: { executeTool } } as unknown as Document;
+
+    const tool = new WebMCPTool(sampleTool, undefined, doc);
+    const result = await tool.runAsync({ args: { destination: 'Tokyo' } } as any);
+
+    expect(result).toEqual({ count: 2, flights: ['SB-101'] });
+    expect(executeTool).toHaveBeenCalledTimes(2);
+    expect(executeTool.mock.calls[0][1]).toEqual({ destination: 'Tokyo' });
+    expect(executeTool.mock.calls[1][1]).toBe('{"destination":"Tokyo"}');
+  });
+
+  it('reuses the negotiated encoding without re-probing', async () => {
+    const executeTool = vi.fn(async (_tool: any, args: any) =>
+      typeof args === 'string' ? { ok: true } : { error: 'Failed to parse input arguments' }
+    );
+    const doc = { modelContext: { executeTool } } as unknown as Document;
+    const tool = new WebMCPTool(sampleTool, undefined, doc);
+
+    await tool.runAsync({ args: { a: 1 } } as any);
+    expect(executeTool).toHaveBeenCalledTimes(2);
+
+    await tool.runAsync({ args: { b: 2 } } as any);
+    // Second call goes straight to the known-good encoding.
+    expect(executeTool).toHaveBeenCalledTimes(3);
+    expect(executeTool.mock.calls[2][1]).toBe('{"b":2}');
+  });
+
+  it('does not retry when the object form works', async () => {
+    const executeTool = vi.fn(async (_tool: any, _args: any) => ({ ok: true }));
+    const doc = { modelContext: { executeTool } } as unknown as Document;
+    const tool = new WebMCPTool(sampleTool, undefined, doc);
+
+    await tool.runAsync({ args: { destination: 'Tokyo' } } as any);
+    expect(executeTool).toHaveBeenCalledTimes(1);
+    expect(executeTool.mock.calls[0][1]).toEqual({ destination: 'Tokyo' });
+  });
+
+  it('propagates unrelated tool errors without retrying', async () => {
+    const executeTool = vi.fn(async () => {
+      throw new Error('Flight service unavailable');
+    });
+    const doc = { modelContext: { executeTool } } as unknown as Document;
+    const tool = new WebMCPTool(sampleTool, undefined, doc);
+
+    await expect(tool.runAsync({ args: {} } as any)).rejects.toThrow('Flight service unavailable');
+    expect(executeTool).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('WebMCP Toolset & Tool', () => {
+  beforeEach(() => resetWebMCPArgEncoding());
+
   it('detects WebMCP support correctly', () => {
     const mockDocWithout = {} as Document;
     expect(isWebMCPSupported(mockDocWithout)).toBe(false);

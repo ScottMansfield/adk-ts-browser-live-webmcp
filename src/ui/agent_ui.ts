@@ -15,6 +15,8 @@ export class AgentUI {
   private agentManager: LiveAgentManager;
   private logs: AgentLogEntry[] = [];
   private transcripts: Array<{ speaker: 'user' | 'model'; text: string }> = [];
+  // Index of the bubble each speaker is still streaming into, if any.
+  private openBubble: { user?: number; model?: number } = {};
   private registeredTools: WebMCP.RegisteredTool[] = [];
   private activeTab: 'chat' | 'tools' | 'logs' = 'chat';
   private liveModels: LiveModelInfo[] = [];
@@ -73,15 +75,32 @@ export class AgentUI {
     this.updateLogsTab();
   }
 
+  /**
+   * Appends streamed transcription to the conversation.
+   *
+   * The two transcription streams interleave: the model often starts replying
+   * before the final input transcription lands. Matching only against the last
+   * bubble therefore made a late final push a fresh duplicate bubble, showing
+   * every exchange twice. Each speaker instead keeps its own open bubble,
+   * which its final closes.
+   */
   updateTranscript(speaker: 'user' | 'model', text: string, isPartial: boolean = false) {
-    const last = this.transcripts[this.transcripts.length - 1];
-    if (!last || last.speaker !== speaker) {
-      this.transcripts.push({ speaker, text });
-    } else {
-      if (isPartial) {
-        last.text += text;
+    const openIndex = this.openBubble[speaker];
+    const open = openIndex !== undefined ? this.transcripts[openIndex] : undefined;
+
+    if (isPartial) {
+      if (open) {
+        open.text += text;
       } else {
-        last.text = text;
+        this.openBubble[speaker] = this.transcripts.push({ speaker, text }) - 1;
+      }
+    } else {
+      // A final carries the whole utterance, so it replaces the streamed text.
+      if (open) {
+        open.text = text;
+        this.openBubble[speaker] = undefined;
+      } else {
+        this.transcripts.push({ speaker, text });
       }
     }
     this.updateChatTab();
