@@ -288,22 +288,6 @@ export class AgentUI {
           </div>
         </div>
 
-        <!-- Suggestion Chips -->
-        <div class="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-          <button class="suggestion-chip px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 text-slate-300 whitespace-nowrap text-[11px] transition-colors">
-            "Find flights to Tokyo"
-          </button>
-          <button class="suggestion-chip px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 text-slate-300 whitespace-nowrap text-[11px] transition-colors">
-            "Select flight SB-101"
-          </button>
-          <button class="suggestion-chip px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 text-slate-300 whitespace-nowrap text-[11px] transition-colors">
-            "Extra legroom seat + 2 bags"
-          </button>
-          <button class="suggestion-chip px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 text-slate-300 whitespace-nowrap text-[11px] transition-colors">
-            "Confirm booking for Scott"
-          </button>
-        </div>
-
         <!-- Navigation Tabs: Conversation | Registered Tools | Real-time Logs -->
         <div class="flex border-b border-slate-800 text-xs font-medium">
           <button id="tab-chat" class="tab-btn px-4 py-2 border-b-2 font-semibold ${this.activeTab === 'chat' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-400 hover:text-slate-200'}">
@@ -595,20 +579,6 @@ export class AgentUI {
         this.syncMicButton(false);
         alert('Microphone error: ' + (err?.message || String(err)));
       }
-    });
-
-    // Suggestion Chips
-    this.container.querySelectorAll('.suggestion-chip').forEach((chip) => {
-      chip.addEventListener('click', () => {
-        const text = chip.textContent?.replace(/"/g, '').trim();
-        if (text) {
-          const promptInput = this.container.querySelector('#input-prompt') as HTMLInputElement;
-          if (promptInput) {
-            promptInput.value = text;
-            promptInput.focus();
-          }
-        }
-      });
     });
 
     // Form submit
