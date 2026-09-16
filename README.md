@@ -103,6 +103,33 @@ the mic button still works manually.
 
 ---
 
+## Patches to `@google/adk`
+
+There is no fork, no `patch-package`, and no edit under `node_modules`. One
+runtime patch is applied at import time in `src/agent/live_agent_manager.ts`.
+
+**Realtime audio field for `gemini-3.N-live`.** ADK picks the field from
+`isGemini3xFlashLive()`, which requires both `gemini-3.` and the literal
+`-flash-live`. `gemini-3.8-live` matches only the first, so ADK sends audio in
+the legacy `{ media }` (`mediaChunks`) field, which the model ignores in
+silence — no transcript, no reply, no error. The patch wraps
+`Gemini.prototype.connect` so audio blobs go out as `{ audio }` instead.
+
+| model | `isGemini3xFlashLive` | ADK routes | works |
+| --- | --- | --- | --- |
+| `gemini-3.8-live` | false | `{ media }` | no (0/6 runs) |
+| `gemini-3.1-flash-live-preview` | true | `{ audio }` | yes |
+| `gemini-2.5-flash-native-audio-latest` | false (native-audio branch) | `{ audio }` | yes |
+
+Reproduce: `node scripts/live_probe.mjs gemini-3.8-live --field=media`. The
+patch becomes unnecessary once ADK's predicate recognises `gemini-3.N-live`.
+
+Two other wrappers are *not* ADK patches: `live_socket_monitor.ts` wraps the
+browser `WebSocket` for diagnostics, and the `executeTool` argument encoding is
+negotiated inside our own `WebMCPTool`.
+
+---
+
 ## Diagnosing the Live connection
 
 Two scripts exercise the Live API without the browser, which separates "my

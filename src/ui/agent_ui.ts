@@ -10,6 +10,18 @@ import { fetchLiveModels, type LiveModelInfo } from '../agent/live_models.ts';
 import { isWebMCPSupported } from '../adk-webmcp/index.ts';
 import type { WebMCP } from 'webmcp-types';
 
+/**
+ * Seed options for the model picker, all verified to advertise
+ * `bidiGenerateContent`. "load from API" replaces these with whatever the key
+ * can actually reach, which is authoritative.
+ */
+const SEED_LIVE_MODELS = [
+  'gemini-3.8-live',
+  'gemini-3.8-live-extended-thinking',
+  'gemini-3.1-flash-live-preview',
+  'gemini-2.5-flash-native-audio-latest',
+];
+
 export class AgentUI {
   private container: HTMLElement;
   private agentManager: LiveAgentManager;
@@ -217,14 +229,17 @@ export class AgentUI {
                 id="select-model"
                 class="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs font-mono text-slate-100 focus:outline-none focus:border-cyan-500"
               >
-                ${this.liveModels.length > 0
-                  ? this.liveModels
-                      .map(
-                        (m) =>
-                          `<option value="${m.id}" ${m.id === this.selectedModel ? 'selected' : ''}>${m.id}</option>`
-                      )
-                      .join('')
-                  : `<option value="${this.selectedModel}" selected>${this.selectedModel}</option>`}
+                ${(this.liveModels.length > 0
+                  ? this.liveModels.map((m) => m.id)
+                  : SEED_LIVE_MODELS.includes(this.selectedModel)
+                    ? SEED_LIVE_MODELS
+                    : [this.selectedModel, ...SEED_LIVE_MODELS]
+                )
+                  .map(
+                    (id) =>
+                      `<option value="${id}" ${id === this.selectedModel ? 'selected' : ''}>${id}</option>`
+                  )
+                  .join('')}
               </select>
             </div>
             <div class="col-span-3 flex items-end justify-end h-full pt-4">

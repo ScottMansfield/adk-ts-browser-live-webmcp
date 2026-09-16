@@ -33,10 +33,23 @@ installLiveSocketMonitor();
 export const audioTelemetry = { framesSent: 0 };
 
 /**
- * ADK picks the realtime audio field via `isGemini3xFlashLive()`, which matches
- * `gemini-3.*` AND `-flash-live`. Ids like `gemini-3.8-live` miss that test and
- * fall back to the legacy `{ media }` (`mediaChunks`) field. `{ audio }` is the
- * current field for audio blobs and is what 3.x expects, so route audio there.
+ * The one patch to @google/adk this demo needs.
+ *
+ * ADK chooses the realtime audio field from `isGemini3xFlashLive()`:
+ *
+ *   modelName.startsWith('gemini-3.') && modelName.includes('-flash-live')
+ *
+ * `gemini-3.8-live` satisfies the first clause and fails the second, so ADK
+ * sends its audio in the legacy `{ media }` (`mediaChunks`) field, which that
+ * model silently ignores - no transcript, no reply, no error. Measured over
+ * repeated probe runs: `{ media }` transcribed 0/6, `{ audio }` transcribed.
+ *
+ * `{ audio }` is the current field for audio blobs, and every Live-capable
+ * model either already receives it from ADK (the `-flash-live` and
+ * `native-audio` branches) or needs it, so routing audio there unconditionally
+ * is safe. Remove this once ADK's predicate recognises `gemini-3.N-live`.
+ *
+ * Reproduce with: node scripts/live_probe.mjs gemini-3.8-live --field=media
  */
 const originalGeminiConnect = (Gemini.prototype as any).connect;
 if (originalGeminiConnect && !(Gemini.prototype as any).__patchedForLiveAudio) {
