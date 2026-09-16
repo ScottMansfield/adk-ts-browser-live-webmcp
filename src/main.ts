@@ -5,7 +5,7 @@
  */
 
 import { TravelApp } from './app/travel_app.ts';
-import { LiveAgentManager } from './agent/live_agent_manager.ts';
+import { LiveAgentManager, audioTelemetry } from './agent/live_agent_manager.ts';
 import { AgentUI } from './ui/agent_ui.ts';
 import { isWebMCPSupported } from './adk-webmcp/index.ts';
 
@@ -71,7 +71,9 @@ async function bootstrap() {
   });
 
   // Handy for debugging a Live session from the DevTools console.
-  (window as any).demo = { travelApp, agentManager, agentUI };
+  // demo.audioTelemetry.framesSent === 0 means capture never produced audio;
+  // a rising count means the mic is fine and the problem is downstream.
+  (window as any).demo = { travelApp, agentManager, agentUI, audioTelemetry };
 }
 
 bootstrap().catch((err) => {

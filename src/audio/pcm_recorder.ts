@@ -35,14 +35,11 @@ export class PCMRecorder {
       },
     });
 
-    // Request 16000Hz AudioContext so the browser natively captures at 16kHz
-    try {
-      this.audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({
-        sampleRate: this.targetSampleRate,
-      });
-    } catch (_e) {
-      this.audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
+    // Run at the device's own rate and resample in JS. Forcing the context to
+    // 16 kHz also forces 16 kHz *output*, because the worklet has to reach
+    // destination to be pulled, and some hardware refuses to start such a
+    // context - which yields no audio at all, silently.
+    this.audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
 
     if (this.audioCtx.state === 'suspended') {
       await this.audioCtx.resume();
@@ -82,7 +79,12 @@ export class PCMRecorder {
         this.workletUrl = URL.createObjectURL(blob);
         await this.audioCtx.audioWorklet.addModule(this.workletUrl);
 
-        this.workletNode = new AudioWorkletNode(this.audioCtx, 'pcm-recorder-processor');
+        // ~32ms per chunk at the device rate, which stays ~32ms after
+        // resampling to 16 kHz - the pacing the Live API's VAD expects.
+        const bufferSize = Math.max(128, Math.round(currentSampleRate * 0.032));
+        this.workletNode = new AudioWorkletNode(this.audioCtx, 'pcm-recorder-processor', {
+          processorOptions: { bufferSize },
+        });
         this.workletNode.port.onmessage = (event) => {
           handleAudioSamples(event.data);
         };

@@ -2,3 +2,11 @@ node_modules/
 dist/
 .DS_Store
 *.local
+
+# Never commit the API key.
+.env
+.env.*
+!.env.example
+
+# Generated test fixtures (see scripts/make_test_audio.mjs)
+public/test-speech*.wav

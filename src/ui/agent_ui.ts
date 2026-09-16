@@ -174,7 +174,12 @@ export class AgentUI {
   }
 
   render() {
-    const savedApiKey = localStorage.getItem('gemini_api_key') || '';
+    // VITE_GEMINI_API_KEY in .env pre-fills the field during local development
+    // so the key never has to be pasted in by hand. .env is gitignored.
+    const savedApiKey =
+      localStorage.getItem('gemini_api_key') ||
+      (import.meta.env?.VITE_GEMINI_API_KEY as string | undefined) ||
+      '';
 
     this.container.innerHTML = `
       <div class="h-full flex flex-col p-4 space-y-3.5 overflow-hidden">
@@ -555,6 +560,8 @@ export class AgentUI {
         const model = modelSelect?.value || this.selectedModel;
         try {
           await this.agentManager.connect(key, model);
+          // connect() opens the mic itself; reflect whatever it achieved.
+          this.syncMicButton(this.agentManager.isMicActive());
         } catch (err: any) {
           alert('Failed to connect: ' + (err?.message || String(err)));
         }

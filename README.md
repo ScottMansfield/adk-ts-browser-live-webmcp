@@ -86,6 +86,45 @@ npm test
 npm run build
 ```
 
+### Optional: skip pasting the API key
+
+Put the key in a gitignored `.env`; the field is then pre-filled in dev. A key
+already typed into the browser takes precedence, so clear it from localStorage
+if you switch keys.
+
+```
+GEMINI_API_KEY=...        # used by the scripts below
+VITE_GEMINI_API_KEY=...   # pre-fills the field during `npm run dev`
+```
+
+The mic opens automatically on **Connect Live** — that click is the user
+gesture `getUserMedia` requires. If it is blocked, the Trace Stream says so and
+the mic button still works manually.
+
+---
+
+## Diagnosing the Live connection
+
+Two scripts exercise the Live API without the browser, which separates "my
+audio pipeline is broken" from "the model is not answering":
+
+```bash
+node scripts/make_test_audio.mjs "Find me flights to Tokyo."   # renders speech to public/
+node scripts/live_probe.mjs gemini-3.8-live                    # streams it to the Live API
+```
+
+`live_probe.mjs` reports the input transcript, response audio size and any tool
+calls with their arguments. Flags: `--text` (send text instead of audio),
+`--field=media`, `--mime=...`, `--manual` (client-driven turn boundaries).
+
+Live responses are intermittent — an identical request can return nothing on
+one attempt and work on the next, so re-run before concluding a model is
+broken.
+
+In the browser, `window.demo.audioTelemetry.framesSent` distinguishes the same
+two cases: `0` means capture never produced audio, a rising count means the mic
+is fine and the problem is downstream.
+
 ---
 
 ## How It Works

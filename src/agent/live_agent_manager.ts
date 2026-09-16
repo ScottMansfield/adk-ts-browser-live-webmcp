@@ -231,6 +231,20 @@ Behavior guidelines:
 
       // Start the ADK live event processing loop
       this.startLiveLoop(modelName);
+
+      // Open the mic straight away: this runs inside the Connect click, which
+      // is the user gesture getUserMedia and AudioContext both require.
+      try {
+        await this.startMicrophone();
+      } catch (micErr: any) {
+        this.callbacks.onLog({
+          id: crypto.randomUUID(),
+          timestamp: new Date(),
+          type: 'error',
+          title: 'Microphone unavailable - use the mic button or type instead',
+          details: micErr?.message || String(micErr),
+        });
+      }
     } catch (err: any) {
       this.isConnected = false;
       this.callbacks.onStatusChange('error', err?.message || String(err));
