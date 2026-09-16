@@ -75,8 +75,6 @@ export class AgentUI {
 
   private updateToolCountLabels() {
     const count = this.registeredTools.length;
-    const badge = this.container.querySelector('#webmcp-tool-count');
-    if (badge) badge.textContent = `${count} tools registered`;
     const tab = this.container.querySelector('#tab-tools');
     if (tab) tab.textContent = `WebMCP Tools (${count})`;
   }
@@ -135,13 +133,12 @@ export class AgentUI {
 
   updatePlaybackState(isPlaying: boolean) {
     const speakerIndicator = this.container.querySelector('#agent-speaker-indicator');
-    if (speakerIndicator) {
-      if (isPlaying) {
-        speakerIndicator.classList.remove('hidden');
-      } else {
-        speakerIndicator.classList.add('hidden');
-      }
-    }
+    if (!speakerIndicator) return;
+    // The element carries both `hidden` and `inline-flex`; Tailwind emits
+    // `hidden` last so it wins while present. Toggling only `hidden` keeps both
+    // rules in the stylesheet, which the CDN build only generates for classes
+    // present in the markup.
+    speakerIndicator.classList.toggle('hidden', !isPlaying);
   }
 
   updateStatus(status: 'disconnected' | 'connecting' | 'connected' | 'error', message?: string) {
@@ -263,40 +260,29 @@ export class AgentUI {
               </button>
             </div>
           </div>
-        </div>
 
-        <!-- Voice & Audio Controller Bar -->
-        <div class="bg-gradient-to-r from-slate-900/80 via-slate-900/60 to-slate-900/80 rounded-xl p-3 border border-slate-800 flex items-center justify-between space-x-3">
-          <div class="flex items-center space-x-3">
-            <button
-              id="btn-mic"
-              disabled
-              class="w-11 h-11 rounded-xl bg-slate-800 text-slate-300 border border-slate-700 flex items-center justify-center transition-all duration-300 opacity-50 cursor-not-allowed hover:border-cyan-500"
-              title="Click to toggle microphone"
-            >
-              <svg id="mic-icon" class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-              </svg>
-            </button>
-            <div>
-              <div class="text-xs font-bold text-slate-200 flex items-center gap-2">
-                Voice Streaming
-                <span id="mic-status-label" class="text-[10px] text-slate-400 font-normal">Mic Muted</span>
-              </div>
-              <div class="w-36 h-1.5 bg-slate-800 rounded-full mt-1.5 overflow-hidden">
+          <!-- Audio status: mic on the left, agent speech on the right -->
+          <div class="flex items-center justify-between mt-2 pt-2 border-t border-slate-800/80">
+            <div class="flex items-center space-x-2">
+              <button
+                id="btn-mic"
+                disabled
+                class="w-6 h-6 rounded-md bg-slate-800 text-slate-300 border border-slate-700 flex items-center justify-center transition-all duration-300 opacity-50 cursor-not-allowed hover:border-cyan-500 shrink-0"
+                title="Click to toggle microphone"
+              >
+                <svg id="mic-icon" class="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+              </button>
+              <span id="mic-status-label" class="text-[10px] text-slate-400">Mic Muted</span>
+              <div class="w-16 h-1 bg-slate-800 rounded-full overflow-hidden">
                 <div id="mic-volume-meter" class="h-full bg-cyan-400 transition-all duration-75 w-0"></div>
               </div>
             </div>
-          </div>
 
-          <div class="text-right flex items-center space-x-2">
-            <span id="agent-speaker-indicator" class="hidden text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse flex items-center gap-1 font-semibold">
+            <span id="agent-speaker-indicator" class="hidden inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse">
               🔊 Speaking
             </span>
-            <div>
-              <div class="text-[11px] font-medium text-slate-400">WebMCP Bridge</div>
-              <div id="webmcp-tool-count" class="text-xs font-mono text-cyan-400">${this.registeredTools.length} tools registered</div>
-            </div>
           </div>
         </div>
 
