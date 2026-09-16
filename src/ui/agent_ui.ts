@@ -182,6 +182,10 @@ export class AgentUI {
       micBtn.disabled = status !== 'connected';
       if (status !== 'connected') {
         micBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        // Leaving the session stops the mic, so the control must not keep
+        // claiming it is listening.
+        this.syncMicButton(false);
+        this.updateVolume(0);
       } else {
         micBtn.classList.remove('opacity-50', 'cursor-not-allowed');
       }

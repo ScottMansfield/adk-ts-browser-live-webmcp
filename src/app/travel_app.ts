@@ -9,25 +9,27 @@ import type { BookingState } from './types.ts';
 import { isWebMCPSupported } from '../adk-webmcp/index.ts';
 
 export class TravelApp {
+  // Starts empty so the results panel shows its placeholder until the agent
+  // actually runs a search - the point of the demo is watching it fill in.
   private state: BookingState = {
     searchQuery: {
-      origin: 'SFO',
-      destination: 'HND',
-      cabinClass: 'Economy',
+      origin: '',
+      destination: '',
     },
-    availableFlights: FLIGHT_DATABASE.filter(
-      (f) => f.origin === 'SFO' && f.destination === 'HND'
-    ),
-    selectedFlightId: 'SB-101',
+    availableFlights: [],
+    selectedFlightId: null,
     amenities: {
       seatPreference: 'Window',
       mealPreference: 'Standard Gourmet',
       extraBaggageCount: 1,
     },
     passenger: null,
-    bookingStatus: 'flight_selected',
+    bookingStatus: 'draft',
     confirmationNumber: null,
   };
+
+  /** True once search_flights has run, which is what reveals the results. */
+  private hasSearched = false;
 
   private container: HTMLElement;
   private onToolActivityCallback?: (toolName: string, args: any, result: any) => void;
@@ -121,6 +123,7 @@ export class TravelApp {
           cabinClass: args.cabinClass,
         };
         this.state.availableFlights = matches.length > 0 ? matches : FLIGHT_DATABASE.slice(0, 3);
+        this.hasSearched = true;
         this.render();
         this.flashElement('#flight-results-card');
 
@@ -406,6 +409,9 @@ export class TravelApp {
     const totalPrice = selectedFlight
       ? selectedFlight.priceUsd + this.state.amenities.extraBaggageCount * 50
       : 0;
+    const hasSearched = this.hasSearched;
+    const destination = this.state.searchQuery.destination;
+    const searchLabel = destination ? `Flights to ${destination}` : 'Matching Flights';
 
     this.container.innerHTML = `
       <div class="h-full flex flex-col space-y-4">
@@ -421,7 +427,6 @@ export class TravelApp {
               <h2 class="text-lg font-bold text-slate-100">
                 SkyBreeze Airways
               </h2>
-              <p class="text-xs text-slate-400">Target Web App exposing tools via <code class="text-cyan-400">document.modelContext</code></p>
             </div>
           </div>
         </div>
@@ -447,29 +452,28 @@ export class TravelApp {
             : ''
         }
 
-        <!-- Search Bar -->
-        <div class="bg-slate-800/60 rounded-xl p-3.5 border border-slate-700/60 backdrop-blur-sm">
-          <div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Search Flight Options</div>
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="text-[11px] text-slate-400">Origin</label>
-              <input type="text" id="input-origin" value="${this.state.searchQuery.origin}" class="w-full mt-1 px-2.5 py-1.5 bg-slate-900/80 border border-slate-700 rounded-lg text-sm font-medium text-slate-100 focus:outline-none focus:border-cyan-500" />
-            </div>
-            <div>
-              <label class="text-[11px] text-slate-400">Destination</label>
-              <input type="text" id="input-destination" value="${this.state.searchQuery.destination}" class="w-full mt-1 px-2.5 py-1.5 bg-slate-900/80 border border-slate-700 rounded-lg text-sm font-medium text-slate-100 focus:outline-none focus:border-cyan-500" />
-            </div>
-          </div>
-        </div>
-
         <!-- Available Flights List -->
         <div id="flight-results-card" class="flex-1 bg-slate-800/60 rounded-xl p-3.5 border border-slate-700/60 backdrop-blur-sm overflow-y-auto">
           <div class="flex items-center justify-between mb-3">
             <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Matching Flights (${this.state.availableFlights.length})
+              ${
+                hasSearched
+                  ? `${searchLabel} (${this.state.availableFlights.length})`
+                  : 'Available Flights'
+              }
             </span>
             <span class="text-[11px] text-cyan-400 font-mono">tool: select_flight({ flightId })</span>
           </div>
+
+          ${
+            !hasSearched
+              ? `
+            <div class="h-full min-h-[160px] flex items-center justify-center text-center px-6">
+              <p class="text-sm text-slate-500">Flights will be shown here once you search.</p>
+            </div>
+          `
+              : ''
+          }
 
           <div class="space-y-2.5">
             ${this.state.availableFlights
