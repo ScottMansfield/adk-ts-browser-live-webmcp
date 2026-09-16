@@ -18,15 +18,10 @@ async function bootstrap() {
     throw new Error('Required DOM containers not found.');
   }
 
-  // 1. WebMCP Status indicator in header
-  const hasWebMCP = isWebMCPSupported();
-  if (topStatus) {
-    topStatus.innerHTML = hasWebMCP
-      ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-          WebMCP: Enabled
-        </span>`
-      : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">
+  // 1. WebMCP is a hard requirement, so there is nothing to announce when it
+  // works - only when it is missing.
+  if (topStatus && !isWebMCPSupported()) {
+    topStatus.innerHTML = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">
           <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
           WebMCP: Flag Needed (#enable-webmcp-testing)
         </span>`;

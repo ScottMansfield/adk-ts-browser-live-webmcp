@@ -418,15 +418,8 @@ export class TravelApp {
               </svg>
             </div>
             <div>
-              <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+              <h2 class="text-lg font-bold text-slate-100">
                 SkyBreeze Airways
-                <span class="text-xs px-2 py-0.5 rounded-full font-mono font-medium ${
-                  isSupported
-                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                    : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
-                }">
-                  ${isSupported ? 'Native WebMCP Active' : 'WebMCP Flag Required'}
-                </span>
               </h2>
               <p class="text-xs text-slate-400">Target Web App exposing tools via <code class="text-cyan-400">document.modelContext</code></p>
             </div>
