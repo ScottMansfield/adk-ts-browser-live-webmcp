@@ -6,6 +6,19 @@
 
 import type { FlightOption } from './types.ts';
 
+/**
+ * Resolves a flight the way a model is likely to name it: by id (`SB-101`), by
+ * flight number (`SB 101`), or either with spacing/case/punctuation drift.
+ */
+export function findFlight(reference: string): FlightOption | undefined {
+  const normalize = (value: string) => value.toLowerCase().replace(/[\s-]/g, '');
+  const needle = normalize(reference ?? '');
+  if (!needle) return undefined;
+  return FLIGHT_DATABASE.find(
+    (f) => normalize(f.id) === needle || normalize(f.flightNumber) === needle
+  );
+}
+
 export const FLIGHT_DATABASE: FlightOption[] = [
   {
     id: 'SB-101',

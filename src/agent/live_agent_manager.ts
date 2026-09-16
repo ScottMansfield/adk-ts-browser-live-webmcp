@@ -185,6 +185,16 @@ Behavior guidelines:
           });
           return;
         }
+        if (event.type === 'toolcall') {
+          this.callbacks.onLog({
+            id: crypto.randomUUID(),
+            timestamp: new Date(),
+            type: 'tool_call',
+            title: 'Raw toolCall frame from server',
+            details: event.functionCalls,
+          });
+          return;
+        }
         if (event.type === 'close') {
           const explanation = describeCloseCode(event.code, event.reason);
           // Once the socket is gone nothing can be sent, so never leave the UI

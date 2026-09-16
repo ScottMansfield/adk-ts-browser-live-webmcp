@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { FLIGHT_DATABASE } from './flight_data.ts';
+import { FLIGHT_DATABASE, findFlight } from './flight_data.ts';
 import type { BookingState } from './types.ts';
 import { isWebMCPSupported } from '../adk-webmcp/index.ts';
 
@@ -137,6 +137,13 @@ export class TravelApp {
             priceUsd: f.priceUsd,
             availableSeats: f.availableSeats,
           })),
+          // Spell out the follow-up call so the id does not have to be inferred.
+          nextStep:
+            this.state.availableFlights.length > 0
+              ? `To choose one, call select_flight with flightId set to one of: ${this.state.availableFlights
+                  .map((f) => f.id)
+                  .join(', ')}`
+              : 'No flights matched; try a different destination.',
         };
 
         this.onToolActivityCallback?.('search_flights', args, result);
@@ -149,7 +156,7 @@ export class TravelApp {
       name: 'select_flight',
       title: 'Select Flight',
       description:
-        'Selects a flight from the available flight search results using its flight ID (e.g. SB-101, SB-102, SB-201). Updates the booking draft state.',
+        'Selects a flight from the search results. The flightId argument is required and must be one of the ids returned by search_flights (e.g. SB-101, SB-102, SB-201). Never call this without flightId.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -165,13 +172,35 @@ export class TravelApp {
         consequentialHint: false,
       },
       execute: async ({ flightId }: any) => {
-        const found = FLIGHT_DATABASE.find(
-          (f) => f.id.toLowerCase() === (flightId || '').toLowerCase()
-        );
+        // Throwing surfaces to the model as an opaque "invocation failed", which
+        // it cannot act on - it just retries until the session dies. Return the
+        // problem and the valid choices so it can correct itself.
+        const choices = (
+          this.state.availableFlights.length > 0
+            ? this.state.availableFlights
+            : FLIGHT_DATABASE
+        ).map((f) => ({ id: f.id, flightNumber: f.flightNumber, cabinClass: f.cabinClass }));
+
+        if (!flightId || typeof flightId !== 'string' || !flightId.trim()) {
+          const result = {
+            error: 'missing_argument',
+            message:
+              'select_flight requires the flightId argument. Call it again with one of availableFlightIds.',
+            availableFlightIds: choices,
+          };
+          this.onToolActivityCallback?.('select_flight', { flightId }, result);
+          return result;
+        }
+
+        const found = findFlight(flightId);
         if (!found) {
-          throw new Error(
-            `Flight '${flightId}' not found. Available flight IDs: ${this.state.availableFlights.map((f) => f.id).join(', ')}`
-          );
+          const result = {
+            error: 'unknown_flight',
+            message: `No flight matches '${flightId}'. Use one of availableFlightIds.`,
+            availableFlightIds: choices,
+          };
+          this.onToolActivityCallback?.('select_flight', { flightId }, result);
+          return result;
         }
 
         this.state.selectedFlightId = found.id;
@@ -272,7 +301,23 @@ export class TravelApp {
       execute: async (args: any) => {
         const flight = FLIGHT_DATABASE.find((f) => f.id === this.state.selectedFlightId);
         if (!flight) {
-          throw new Error('Cannot confirm booking: No flight is currently selected.');
+          const result = {
+            error: 'no_flight_selected',
+            message: 'Call select_flight before confirm_booking.',
+            availableFlightIds: this.state.availableFlights.map((f) => f.id),
+          };
+          this.onToolActivityCallback?.('confirm_booking', args, result);
+          return result;
+        }
+        if (!args?.passengerName || !args?.contactEmail) {
+          const result = {
+            error: 'missing_argument',
+            message:
+              'confirm_booking requires both passengerName and contactEmail. Ask the traveler for whichever is missing, then call again.',
+            received: { passengerName: args?.passengerName, contactEmail: args?.contactEmail },
+          };
+          this.onToolActivityCallback?.('confirm_booking', args, result);
+          return result;
         }
 
         const confirmationCode = 'SB-' + Math.floor(100000 + Math.random() * 900000);

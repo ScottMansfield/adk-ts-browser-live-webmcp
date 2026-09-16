@@ -15,10 +15,12 @@
  */
 
 export interface LiveSocketEvent {
-  type: 'open' | 'close' | 'error';
+  type: 'open' | 'close' | 'error' | 'toolcall';
   code?: number;
   reason?: string;
   url: string;
+  /** Raw functionCalls exactly as the server sent them, for 'toolcall'. */
+  functionCalls?: unknown[];
 }
 
 type Listener = (event: LiveSocketEvent) => void;
@@ -29,6 +31,24 @@ let installed = false;
 /** True for the bidirectional Live endpoint, not unrelated app sockets. */
 function isGeminiLiveUrl(url: string): boolean {
   return url.includes('BidiGenerateContent') || url.includes('google.ai.generativelanguage');
+}
+
+/** Live frames arrive as JSON text or Blob; decode either, ignoring junk. */
+function readFrame(data: unknown, handle: (frame: any) => void) {
+  const parse = (text: string) => {
+    try {
+      handle(JSON.parse(text));
+    } catch {
+      /* non-JSON frame */
+    }
+  };
+  if (typeof data === 'string') {
+    parse(data);
+  } else if (typeof Blob !== 'undefined' && data instanceof Blob) {
+    data.text().then(parse).catch(() => {});
+  } else if (data instanceof ArrayBuffer) {
+    parse(new TextDecoder().decode(data));
+  }
 }
 
 function emit(event: LiveSocketEvent) {
@@ -62,6 +82,16 @@ export function installLiveSocketMonitor() {
         emit({ type: 'close', code: e.code, reason: e.reason, url: safeUrl })
       );
       socket.addEventListener('error', () => emit({ type: 'error', url: safeUrl }));
+      // Surface tool calls as the server framed them, so a missing argument can
+      // be attributed to the model rather than to the client pipeline.
+      socket.addEventListener('message', (e: MessageEvent) => {
+        readFrame(e.data, (frame) => {
+          const calls = frame?.toolCall?.functionCalls;
+          if (Array.isArray(calls) && calls.length > 0) {
+            emit({ type: 'toolcall', url: safeUrl, functionCalls: calls });
+          }
+        });
+      });
     }
     return socket;
   }
