@@ -18,8 +18,26 @@ import { Modality } from '@google/genai';
 import { WebMCPToolset } from '../adk-webmcp/index.ts';
 import { PCMPlayer } from '../audio/pcm_player.ts';
 import { PCMRecorder } from '../audio/pcm_recorder.ts';
+import {
+  describeCloseCode,
+  installLiveSocketMonitor,
+  onLiveSocketEvent,
+} from './live_socket_monitor.ts';
 
-// Patch ADK's Gemini.connect so audio blobs are routed as { audio: blob } for Gemini 3.8/3.x models
+installLiveSocketMonitor();
+
+/**
+ * Counts audio frames actually handed to the socket, so "no voice response"
+ * can be told apart from "no audio was ever sent".
+ */
+export const audioTelemetry = { framesSent: 0 };
+
+/**
+ * ADK picks the realtime audio field via `isGemini3xFlashLive()`, which matches
+ * `gemini-3.*` AND `-flash-live`. Ids like `gemini-3.8-live` miss that test and
+ * fall back to the legacy `{ media }` (`mediaChunks`) field. `{ audio }` is the
+ * current field for audio blobs and is what 3.x expects, so route audio there.
+ */
 const originalGeminiConnect = (Gemini.prototype as any).connect;
 if (originalGeminiConnect && !(Gemini.prototype as any).__patchedForLiveAudio) {
   (Gemini.prototype as any).__patchedForLiveAudio = true;
@@ -29,16 +47,25 @@ if (originalGeminiConnect && !(Gemini.prototype as any).__patchedForLiveAudio) {
 
     connection.sendRealtime = async function (blob: any) {
       if (blob?.mimeType?.startsWith('audio/')) {
-        // Direct audio payload required by Gemini 3.x Live API endpoints
+        audioTelemetry.framesSent++;
+        if (audioTelemetry.framesSent === 1) {
+          console.log('[live] first audio frame sent as realtimeInput.audio', blob.mimeType);
+        }
         this.geminiSession.sendRealtimeInput({ audio: blob });
-      } else {
-        return originalSendRealtime.call(this, blob);
+        return;
       }
+      return originalSendRealtime.call(this, blob);
     };
 
     return connection;
   };
 }
+
+/**
+ * Starting point for the model dropdown. Live model IDs churn, so this is only
+ * a seed - use "load from API" in the UI to list what the key can actually use.
+ */
+export const DEFAULT_LIVE_MODEL = 'gemini-3.8-live';
 
 export interface AgentLogEntry {
   id: string;
@@ -68,6 +95,8 @@ export class LiveAgentManager {
   private pcmPlayer: PCMPlayer;
   private pcmRecorder: PCMRecorder;
   private callbacks: LiveAgentCallbacks;
+  private unsubscribeSocket: (() => void) | null = null;
+  private sawModelEvent = false;
 
   constructor(callbacks: LiveAgentCallbacks) {
     this.callbacks = callbacks;
@@ -140,11 +169,52 @@ Behavior guidelines:
       this.liveRequestQueue = new LiveRequestQueue();
       this.abortController = new AbortController();
 
+      // Watch the real socket: a rejected upgrade otherwise leaves the SDK's
+      // connect() pending forever with no error anywhere.
+      this.sawModelEvent = false;
+      this.unsubscribeSocket?.();
+      this.unsubscribeSocket = onLiveSocketEvent((event) => {
+        if (event.type === 'open') {
+          this.callbacks.onLog({
+            id: crypto.randomUUID(),
+            timestamp: new Date(),
+            type: 'system',
+            title: 'Live WebSocket open',
+            details: { model: modelName },
+          });
+          return;
+        }
+        if (event.type === 'close') {
+          const explanation = describeCloseCode(event.code, event.reason);
+          // Once the socket is gone nothing can be sent, so never leave the UI
+          // claiming the session is live.
+          const wasUsable = this.sawModelEvent;
+          this.isConnected = false;
+          this.callbacks.onLog({
+            id: crypto.randomUUID(),
+            timestamp: new Date(),
+            type: 'error',
+            title: wasUsable
+              ? 'Live connection closed'
+              : `Live connection failed (model: ${modelName})`,
+            details: explanation,
+          });
+          this.callbacks.onStatusChange('error', explanation);
+        }
+      });
+
+      // Mark connected as soon as the queue exists. runLive() only yields its
+      // first event AFTER the model replies, and the model cannot reply until
+      // we send it input - so gating sendTextMessage()/startMicrophone() on
+      // "first event received" deadlocks the session permanently.
+      this.isConnected = true;
+      this.callbacks.onStatusChange('connected', `Live session active (${modelName})`);
+
       this.callbacks.onLog({
         id: crypto.randomUUID(),
         timestamp: new Date(),
         type: 'system',
-        title: 'Initializing Gemini Live WebSocket',
+        title: 'Live session ready',
         details: { model: modelName },
       });
 
@@ -187,18 +257,17 @@ Behavior guidelines:
         },
       });
 
-      let connectionEstablished = false;
+      let sawFirstEvent = false;
 
       for await (const event of liveEvents) {
-        if (!connectionEstablished) {
-          connectionEstablished = true;
-          this.isConnected = true;
-          this.callbacks.onStatusChange('connected', `Live session active (${modelName})`);
+        if (!sawFirstEvent) {
+          sawFirstEvent = true;
+          this.sawModelEvent = true;
           this.callbacks.onLog({
             id: crypto.randomUUID(),
             timestamp: new Date(),
             type: 'system',
-            title: 'Live WebSocket Handshake Established',
+            title: 'First response received from model',
             details: { model: modelName, audioSampleRate: 24000 },
           });
         }
@@ -377,6 +446,8 @@ Behavior guidelines:
   async disconnect() {
     this.stopMicrophone();
     this.pcmPlayer.stop();
+    this.unsubscribeSocket?.();
+    this.unsubscribeSocket = null;
 
     if (this.abortController) {
       this.abortController.abort();

@@ -5,6 +5,8 @@
  */
 
 import { LiveAgentManager, type AgentLogEntry } from '../agent/live_agent_manager.ts';
+import { DEFAULT_LIVE_MODEL } from '../agent/live_agent_manager.ts';
+import { fetchLiveModels, type LiveModelInfo } from '../agent/live_models.ts';
 import { isWebMCPSupported } from '../adk-webmcp/index.ts';
 import type { WebMCP } from 'webmcp-types';
 
@@ -15,6 +17,13 @@ export class AgentUI {
   private transcripts: Array<{ speaker: 'user' | 'model'; text: string }> = [];
   private registeredTools: WebMCP.RegisteredTool[] = [];
   private activeTab: 'chat' | 'tools' | 'logs' = 'chat';
+  private liveModels: LiveModelInfo[] = [];
+  private selectedModel: string =
+    localStorage.getItem('gemini_live_model') || DEFAULT_LIVE_MODEL;
+  // render() rebuilds the whole panel, so connection state has to be re-applied
+  // afterwards or switching tabs makes a live session look Offline.
+  private lastStatus: 'disconnected' | 'connecting' | 'connected' | 'error' = 'disconnected';
+  private lastStatusMessage = 'Ready to connect';
 
   constructor(container: HTMLElement, agentManager: LiveAgentManager) {
     this.container = container;
@@ -32,14 +41,30 @@ export class AgentUI {
   }
 
   async refreshTools() {
-    if (isWebMCPSupported()) {
-      try {
-        this.registeredTools = await document.modelContext!.getTools();
-        this.updateToolsTab();
-      } catch (err) {
-        console.error('Error fetching registered tools:', err);
-      }
+    if (!isWebMCPSupported()) {
+      this.registeredTools = [];
+      this.updateToolCountLabels();
+      this.updateToolsTab();
+      return;
     }
+    try {
+      this.registeredTools = await document.modelContext!.getTools();
+    } catch (err) {
+      console.error('Error fetching registered tools:', err);
+      this.registeredTools = [];
+    }
+    // The count appears in the header badge and the tab label, which live
+    // outside #content-tools; update them too or they stay stuck at 0.
+    this.updateToolCountLabels();
+    this.updateToolsTab();
+  }
+
+  private updateToolCountLabels() {
+    const count = this.registeredTools.length;
+    const badge = this.container.querySelector('#webmcp-tool-count');
+    if (badge) badge.textContent = `${count} tools registered`;
+    const tab = this.container.querySelector('#tab-tools');
+    if (tab) tab.textContent = `WebMCP Tools (${count})`;
   }
 
   addLog(entry: AgentLogEntry) {
@@ -81,6 +106,8 @@ export class AgentUI {
   }
 
   updateStatus(status: 'disconnected' | 'connecting' | 'connected' | 'error', message?: string) {
+    this.lastStatus = status;
+    if (message) this.lastStatusMessage = message;
     const statusBadge = this.container.querySelector('#agent-status-badge');
     const connectBtn = this.container.querySelector('#btn-connect') as HTMLButtonElement;
     const micBtn = this.container.querySelector('#btn-mic') as HTMLButtonElement;
@@ -156,14 +183,24 @@ export class AgentUI {
               />
             </div>
             <div class="col-span-4">
-              <label class="text-[10px] text-slate-400 block mb-0.5">Live Model</label>
+              <label class="text-[10px] text-slate-400 block mb-0.5 flex items-center justify-between">
+                <span>Live Model</span>
+                <button id="btn-load-models" class="text-[10px] text-cyan-400 hover:text-cyan-300 underline decoration-dotted" title="List models your API key can use over the Live API">
+                  load from API
+                </button>
+              </label>
               <select
                 id="select-model"
                 class="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs font-mono text-slate-100 focus:outline-none focus:border-cyan-500"
               >
-                <option value="gemini-3.8-live" selected>gemini-3.8-live (Default)</option>
-                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-                <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp</option>
+                ${this.liveModels.length > 0
+                  ? this.liveModels
+                      .map(
+                        (m) =>
+                          `<option value="${m.id}" ${m.id === this.selectedModel ? 'selected' : ''}>${m.id}</option>`
+                      )
+                      .join('')
+                  : `<option value="${this.selectedModel}" selected>${this.selectedModel}</option>`}
               </select>
             </div>
             <div class="col-span-3 flex items-end justify-end h-full pt-4">
@@ -207,7 +244,7 @@ export class AgentUI {
             </span>
             <div>
               <div class="text-[11px] font-medium text-slate-400">WebMCP Bridge</div>
-              <div class="text-xs font-mono text-cyan-400">${this.registeredTools.length} tools registered</div>
+              <div id="webmcp-tool-count" class="text-xs font-mono text-cyan-400">${this.registeredTools.length} tools registered</div>
             </div>
           </div>
         </div>
@@ -286,8 +323,27 @@ export class AgentUI {
 
     this.attachEventListeners();
     this.updateChatTab();
+    this.updateToolCountLabels();
     this.updateToolsTab();
     this.updateLogsTab();
+    // Re-apply live state the fresh markup just clobbered.
+    this.updateStatus(this.lastStatus, this.lastStatusMessage);
+    this.syncMicButton(this.agentManager.isMicActive());
+  }
+
+  private syncMicButton(isActive: boolean) {
+    const micBtn = this.container.querySelector('#btn-mic') as HTMLButtonElement | null;
+    const micLabel = this.container.querySelector('#mic-status-label');
+    if (!micBtn) return;
+    if (isActive) {
+      micBtn.classList.add('bg-cyan-500', 'text-slate-950', 'mic-recording');
+      micBtn.classList.remove('bg-slate-800', 'text-slate-300');
+      if (micLabel) micLabel.textContent = 'Listening (Auto-VAD)...';
+    } else {
+      micBtn.classList.remove('bg-cyan-500', 'text-slate-950', 'mic-recording');
+      micBtn.classList.add('bg-slate-800', 'text-slate-300');
+      if (micLabel) micLabel.textContent = 'Mic Muted';
+    }
   }
 
   private updateChatTab() {
@@ -422,6 +478,47 @@ export class AgentUI {
       localStorage.setItem('gemini_api_key', apiKeyInput.value.trim());
     });
 
+    // Model selection persists so a working choice survives a reload.
+    const modelSelectEl = this.container.querySelector('#select-model') as HTMLSelectElement;
+    modelSelectEl?.addEventListener('change', () => {
+      this.selectedModel = modelSelectEl.value;
+      localStorage.setItem('gemini_live_model', this.selectedModel);
+    });
+
+    // "load from API" - replaces guesswork about which Live model IDs exist.
+    const loadModelsBtn = this.container.querySelector('#btn-load-models') as HTMLButtonElement;
+    loadModelsBtn?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const key = apiKeyInput?.value.trim() || localStorage.getItem('gemini_api_key') || '';
+      if (!key) {
+        alert('Enter your Gemini API key first, then click "load from API".');
+        apiKeyInput?.focus();
+        return;
+      }
+      loadModelsBtn.textContent = 'loading…';
+      try {
+        const models = await fetchLiveModels(key);
+        this.liveModels = models;
+        if (models.length === 0) {
+          alert('This API key reports no models supporting the Live (bidiGenerateContent) API.');
+        } else if (!models.some((m) => m.id === this.selectedModel)) {
+          this.selectedModel = models[0].id;
+          localStorage.setItem('gemini_live_model', this.selectedModel);
+        }
+        this.addLog({
+          id: crypto.randomUUID(),
+          timestamp: new Date(),
+          type: 'system',
+          title: `Live-capable models for this key (${models.length})`,
+          details: models.map((m) => m.id),
+        });
+        this.render();
+      } catch (err: any) {
+        loadModelsBtn.textContent = 'load from API';
+        alert('Could not list models: ' + (err?.message || String(err)));
+      }
+    });
+
     // Connect Button
     const connectBtn = this.container.querySelector('#btn-connect') as HTMLButtonElement;
     connectBtn?.addEventListener('click', async () => {
@@ -436,7 +533,7 @@ export class AgentUI {
         }
 
         const modelSelect = this.container.querySelector('#select-model') as HTMLSelectElement;
-        const model = modelSelect?.value || 'gemini-3.8-live';
+        const model = modelSelect?.value || this.selectedModel;
         try {
           await this.agentManager.connect(key, model);
         } catch (err: any) {
@@ -447,24 +544,16 @@ export class AgentUI {
 
     // Mic Toggle Button
     const micBtn = this.container.querySelector('#btn-mic') as HTMLButtonElement;
-    const micLabel = this.container.querySelector('#mic-status-label');
-
-    const setMicUiState = (isActive: boolean) => {
-      if (isActive) {
-        micBtn.classList.add('bg-cyan-500', 'text-slate-950', 'mic-recording');
-        micBtn.classList.remove('bg-slate-800', 'text-slate-300');
-        if (micLabel) micLabel.textContent = 'Listening (Auto-VAD)...';
-      } else {
-        micBtn.classList.remove('bg-cyan-500', 'text-slate-950', 'mic-recording');
-        micBtn.classList.add('bg-slate-800', 'text-slate-300');
-        if (micLabel) micLabel.textContent = 'Mic Muted';
-      }
-    };
 
     micBtn?.addEventListener('click', async () => {
       if (!this.agentManager.isLive()) return;
-      const isNowActive = await this.agentManager.toggleMicrophone();
-      setMicUiState(isNowActive);
+      try {
+        const isNowActive = await this.agentManager.toggleMicrophone();
+        this.syncMicButton(isNowActive);
+      } catch (err: any) {
+        this.syncMicButton(false);
+        alert('Microphone error: ' + (err?.message || String(err)));
+      }
     });
 
     // Suggestion Chips

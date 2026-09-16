@@ -27,7 +27,7 @@ An end-to-end, 100% native in-browser AI agent demonstrating the **Google Agent 
 └──────────────────────────────────────┬─────────────────────────────────┘
                                        │ WebSocket (Gemini Multimodal Live)
                                        ▼
-                       gemini-3.8-flash-live / Gemini Live API
+                     Gemini Live API (bidiGenerateContent)
 ```
 
 ### Key Highlights
@@ -35,7 +35,15 @@ An end-to-end, 100% native in-browser AI agent demonstrating the **Google Agent 
 - **In-Browser ADK Live Agent**: Runs `@google/adk`'s `LlmAgent`, `Runner`, and `LiveRequestQueue` client-side in the browser.
 - **Multimodal Voice Streaming**: Captures microphone input at 16kHz Linear PCM into `LiveRequestQueue`, and plays back Gemini Live synthesized voice responses via Web Audio API at 24kHz.
 - **Decoupled `adk-webmcp` Bridge**: Cleanly designed as a standalone module ready to be upstreamed into the `@google/adk` codebase under `packages/adk/src/tools/webmcp/`.
-- **Latest Gemini Live Models**: Powered by `gemini-3.8-flash-live` (with configurable fallbacks to `gemini-2.5-flash-native-audio-preview` or `gemini-2.0-flash-exp`).
+- **Model discovery instead of hardcoded ids**: Live model ids change and a wrong one fails as an opaque socket close, so the model dropdown seeds with `gemini-3.8-live` and the **load from API** link lists exactly the models your key can use over `bidiGenerateContent`.
+
+### Troubleshooting
+
+The demo reports Live failures rather than hanging on them. If a session does not respond:
+
+- Open the **Trace Stream** tab. A rejected connection is logged with the server's own reason and the WebSocket close code (e.g. `API key not valid… (close code 1007)`).
+- Close code `1007` usually means the selected model does not support the Live API — click **load from API** and pick one from the list.
+- `window.demo` is exposed in dev (`demo.agentManager`, `demo.agentUI`, `demo.travelApp`) for poking at state from DevTools.
 
 ---
 

@@ -69,6 +69,9 @@ async function bootstrap() {
       details: { arguments: args, returned: result },
     });
   });
+
+  // Handy for debugging a Live session from the DevTools console.
+  (window as any).demo = { travelApp, agentManager, agentUI };
 }
 
 bootstrap().catch((err) => {
